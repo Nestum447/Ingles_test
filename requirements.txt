@@ -1,0 +1,4 @@
+streamlit
+textstat
+spacy
+language_tool_python
