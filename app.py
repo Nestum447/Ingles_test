@@ -1,63 +1,78 @@
 import streamlit as st
-import json
-import textstat
 import spacy
-import language_tool_python
+from textblob import TextBlob
 
-st.set_page_config(page_title="EF SET Writing Practice - Néstor Carpio", layout="centered")
+# Cargar modelo de inglés
+nlp = spacy.load("en_core_web_sm")
 
-st.title("✍️ EF SET Writing Practice (C1 Level)")
-st.markdown("Simulación del Writing Test de **EF SET** con evaluación automática desarrollada por *Néstor Carpio*.")
+st.set_page_config(page_title="EF SET Writing Test", layout="centered")
+st.title("✍️ English Writing Evaluation (EF SET Style)")
 
-# Cargar tareas
-with open("tasks.json", "r") as f:
-    tasks = json.load(f)
+st.write("Write your essay on the topic below and click **Evaluate** to get your score.")
 
-task = st.radio("Selecciona una tarea:", ["Task 1 - Short Writing", "Task 2 - Essay"])
-selected = "task1" if "Task 1" in task else "task2"
+# Tema ejemplo (puedes cambiarlo o generar aleatoriamente)
+st.subheader("Topic:")
+st.markdown("> *Do you think technology makes our lives better or worse? Give reasons and examples.*")
 
-st.subheader(tasks[selected]["title"])
-st.caption(tasks[selected]["instructions"])
+# Área de texto para escribir
+text = st.text_area("Write your answer here:", height=200, placeholder="Write your essay in English...")
 
-text = st.text_area("✏️ Escribe tu respuesta en inglés:", height=250)
-
-if st.button("🔍 Evaluar escritura"):
+if st.button("Evaluate"):
     if len(text.strip()) < 30:
-        st.warning("Por favor, escribe una respuesta más completa antes de evaluar.")
+        st.warning("Please write at least 30 words to evaluate your text.")
     else:
-        # Cargar modelos
-        nlp = spacy.load("en_core_web_sm")
-        tool = language_tool_python.LanguageTool('en-US')
-        
-        # Análisis
+        # Análisis con spaCy
         doc = nlp(text)
-        words = len([token.text for token in doc if token.is_alpha])
-        sentences = len(list(doc.sents))
-        flesch = textstat.flesch_reading_ease(text)
-        mistakes = tool.check(text)
-        n_errors = len(mistakes)
 
-        # Nivel estimado
-        if words < 60:
-            level = "A2"
-        elif words < 100:
-            level = "B1"
-        elif words < 160:
-            level = "B2"
-        elif flesch < 50 and n_errors < 5:
-            level = "C1"
+        # Métricas básicas
+        sentences = list(doc.sents)
+        words = [token.text for token in doc if token.is_alpha]
+        word_count = len(words)
+        sentence_count = len(sentences)
+        avg_sentence_len = word_count / max(1, sentence_count)
+
+        # Análisis gramatical y léxico
+        pos_counts = doc.count_by(spacy.attrs.POS)
+        verbs = pos_counts.get(doc.vocab.strings["VERB"], 0)
+        nouns = pos_counts.get(doc.vocab.strings["NOUN"], 0)
+        adjectives = pos_counts.get(doc.vocab.strings["ADJ"], 0)
+
+        # Polaridad y subjetividad (fluidez general)
+        blob = TextBlob(text)
+        polarity = blob.sentiment.polarity
+        subjectivity = blob.sentiment.subjectivity
+
+        # Puntuación base (simple pero eficaz)
+        fluency = min(100, 60 + polarity * 40)
+        grammar = max(50, 100 - abs(5 - avg_sentence_len) * 6)
+        coherence = min(100, 70 + (sentence_count * 2))
+        vocabulary = min(100, 50 + (adjectives + verbs + nouns) / max(1, sentence_count) * 3)
+
+        final_score = round((fluency + grammar + coherence + vocabulary) / 4, 1)
+
+        st.subheader("🧩 Evaluation Results")
+        st.write(f"**Word count:** {word_count}")
+        st.write(f"**Sentences:** {sentence_count}")
+        st.write(f"**Average sentence length:** {avg_sentence_len:.1f} words")
+
+        st.progress(final_score / 100)
+        st.markdown(f"### 🏆 Final Writing Score: **{final_score}/100**")
+
+        st.markdown(f"""
+        - **Fluency:** {fluency:.1f}  
+        - **Grammar:** {grammar:.1f}  
+        - **Coherence:** {coherence:.1f}  
+        - **Vocabulary:** {vocabulary:.1f}
+        """)
+
+        # Nivel aproximado EF SET
+        if final_score < 40:
+            level = "A2 (Beginner)"
+        elif final_score < 60:
+            level = "B1 (Intermediate)"
+        elif final_score < 80:
+            level = "B2 (Upper Intermediate)"
         else:
-            level = "C2"
+            level = "C1-C2 (Advanced)"
 
-        # Mostrar resultados
-        st.success(f"✅ Nivel estimado: **{level}**")
-        st.write(f"**Palabras:** {words} | **Oraciones:** {sentences} | **Errores detectados:** {n_errors} | **Flesch score:** {flesch:.1f}")
-
-        if n_errors > 0:
-            st.subheader("🛠️ Errores y sugerencias:")
-            for m in mistakes[:10]:  # Mostrar máximo 10
-                st.markdown(f"- **{m.ruleIssueType.capitalize()}**: {m.message}")
-                if m.replacements:
-                    st.caption(f"Sugerencia: {', '.join(m.replacements[:3])}")
-
-        st.info("💡 Consejo: Usa conectores (‘however’, ‘therefore’, ‘as a result’) y frases complejas para alcanzar C1–C2.")
+        st.success(f"Approximate EF SET Level: **{level}**")
